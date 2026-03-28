@@ -240,7 +240,13 @@ int main(int argc, char** argv)
 
 					size_t nsent;
 					r = sw_send(client->s, g_http_response + client->http_tail, http_remaining, &nsent);
-					assert(r == SW_OK);
+					if (r == SW_WOULD_BLOCK) continue;
+					if (r != SW_OK)
+					{
+						printf("listener %zu disconnected\n", index);
+						client_alloc_mask[i] &= ~(1ull << bit);
+						continue;
+					}
 
 					client->http_tail += nsent;
 					if (client->http_tail == g_http_response_len)
@@ -256,6 +262,7 @@ int main(int argc, char** argv)
 
 					size_t nsent;
 					r = sw_send(client->s, ogg_header_buf + client->ogg_headers_cursor, ogg_remaining, &nsent);
+					if (r == SW_WOULD_BLOCK) continue;
 					if (r != SW_OK)
 					{
 						printf("listener %zu disconnected\n", index);
@@ -287,6 +294,7 @@ int main(int argc, char** argv)
 
 					size_t nsent;
 					r = sw_send(client->s, chunklen, n, &nsent);
+					if (r == SW_WOULD_BLOCK) continue;
 					if (r != SW_OK)
 					{
 						printf("listener %zu disconnected\n", index);
@@ -309,6 +317,7 @@ int main(int argc, char** argv)
 
 					size_t nsent;
 					r = sw_send(client->s, chunk->data + client->http_chunk_cursor, http_remaining, &nsent);
+					if (r == SW_WOULD_BLOCK) continue;
 					if (r == SW_ERR || r == SW_CLOSED)
 					{
 						printf("listener %zu disconnected\n", index);
