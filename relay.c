@@ -201,7 +201,7 @@ int main(int argc, char** argv)
 					r = sw_recv(streamer_socket, ogg_buf + ogg_buf_head, 64 * 1024, &nread);
 					if ((r == SW_OK || r == SW_WOULD_BLOCK) && nread > 0)
 					{
-						printf("nread = %zu\n", nread);
+						printf("nread = %zu, http_chunk_head = %zu\n", nread, http_chunk_head);
 
 						http_chunks[http_chunk_head++] = (http_chunk_t){
 							.size = nread,
@@ -290,6 +290,8 @@ int main(int argc, char** argv)
 					{
 						continue;
 					}
+
+					printf("http_chunk_tail = %zu\n", client->http_chunk_tail);
 
 					assert(client->http_chunk_tail < http_chunk_head);
 
