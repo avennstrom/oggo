@@ -1,5 +1,7 @@
 #include "miniaudio.h"
 #include "socket.h"
+#define SW_SOCKET_IMPLEMENTATION
+#include "socket.h"
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
