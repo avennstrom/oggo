@@ -10,7 +10,7 @@ add_executable(relay relay.c llhttp/api.c llhttp/http.c llhttp/llhttp.c)
 target_include_directories(client PRIVATE external/ogg/include external/vorbis/include)
 target_include_directories(relay PRIVATE external/ogg/include external/vorbis/include)
 
-target_link_libraries(client PRIVATE ogg vorbis)
+target_link_libraries(client PRIVATE ogg vorbis vorbisenc)
 target_link_libraries(relay PRIVATE ogg vorbis)
 
 if(UNIX AND NOT APPLE)
