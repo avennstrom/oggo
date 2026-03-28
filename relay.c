@@ -287,7 +287,13 @@ int main(int argc, char** argv)
 
 					size_t nsent;
 					r = sw_send(client->s, chunklen, n, &nsent);
-					assert(r == SW_OK);
+					if (r != SW_OK)
+					{
+						printf("listener %zu disconnected\n", index);
+						client_alloc_mask[i] &= ~(1ull << bit);
+						continue;
+					}
+
 					assert(nsent == n);
 
 					client->state = CLIENT_SEND_HTTP_CHUNK_BODY;
