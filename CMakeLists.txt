@@ -13,6 +13,11 @@ target_include_directories(relay PRIVATE external/ogg/include external/vorbis/in
 target_link_libraries(client PRIVATE ogg vorbis)
 target_link_libraries(relay PRIVATE ogg vorbis)
 
+if(UNIX AND NOT APPLE)
+    target_link_libraries(client PRIVATE dl)
+    target_link_libraries(relay PRIVATE dl)
+endif()
+
 if (WIN32)
     target_link_libraries(client PRIVATE ws2_32)
     target_link_libraries(relay PRIVATE ws2_32)
