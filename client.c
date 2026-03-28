@@ -358,11 +358,10 @@ int main(int argc, char** argv)
                 }
 
                 s = sw_socket_create();
-                sw_socket_set_nonblocking(s, 1);
+                //sw_socket_set_nonblocking(s, 1);
                 r = sw_connect(s, argv[1], RELAY_PORT);
                 if (r == SW_OK || r == SW_WOULD_BLOCK)
                 {
-                    printf("reconnected!\n");
                     state = STREAM_HANDSHAKE;
                     break;
                 }
@@ -379,7 +378,6 @@ int main(int argc, char** argv)
                 if (r == SW_WOULD_BLOCK) break;
                 if (r == SW_ERR)
                 {
-                    printf("disconnected!\n");
                     state = STREAM_DISCONNECTED;
                     break;
                 }

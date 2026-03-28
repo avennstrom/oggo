@@ -107,7 +107,10 @@ int main(int argc, char** argv)
 	sw_socket_set_nonblocking(streamer_server_socket, 1);
 
 	sw_bind(broadcast_socket, BIND_ADDRESS, 30000);
+	printf("Listening for listeners on port %d\n", 30000);
+
 	sw_bind(streamer_server_socket, BIND_ADDRESS, 30001);
+	printf("Listening for streamer on port %d\n", 30001);
 
 	sw_listen(broadcast_socket, 64);
 	sw_listen(streamer_server_socket, 1);
