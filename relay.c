@@ -159,6 +159,12 @@ int main(int argc, char** argv)
 					size_t nread;
 					r = sw_recv(streamer_socket, &streamer_handshake, sizeof(streamer_handshake), &nread);
 					if (r == SW_WOULD_BLOCK) break;
+					if (r != SW_OK)
+					{
+						printf("streamer disconnected!\n");
+						streamer_socket = SW_INVALID_SOCKET;
+						break;
+					}
 					assert(nread == sizeof(streamer_handshake));
 
 					if (memcmp(streamer_handshake.password, PASSWORD, sizeof(streamer_handshake.password)) != 0)

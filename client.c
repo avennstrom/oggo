@@ -78,6 +78,8 @@ static void ogg_pop(void)
     ogg_chunk_t* popped = ogg.chunks_tail;
     ogg.chunks_tail = popped->next;
 
+    free(popped->data);
+
     if (ogg.chunks_tail == NULL)
     {
         assert(ogg.chunks_head == popped);
@@ -305,9 +307,12 @@ int main(int argc, char** argv)
     // connect to example.org (IPv4: 93.184.216.34) port 80
     //sw_socket s = sw_connect("65.21.200.18", 80);
     
-    sw_socket s = sw_socket_create();
-    sw_result r = sw_connect(s, argv[1], RELAY_PORT);
-    assert(r == SW_OK);
+    //sw_socket s = sw_socket_create();
+    //sw_result r = sw_connect(s, argv[1], RELAY_PORT);
+    //assert(r == SW_OK);
+
+    sw_socket s;
+    sw_result r;
 
     ma_result result;
     ma_context context;
@@ -331,11 +336,11 @@ int main(int argc, char** argv)
     if (result != MA_SUCCESS) { fprintf(stderr, "Failed to start device\n"); ma_device_uninit(&device); return 1; }
 
     enum {
-        STREAM_HANDSHAKE = 0,
+        STREAM_DISCONNECTED = 0,
+        STREAM_HANDSHAKE,
         STREAM_HEADERS,
         STREAM_CHUNKS,
-        STREAM_ERROR,
-    } state = STREAM_HANDSHAKE;
+    } state = STREAM_DISCONNECTED;
     const uint8_t* pending_ogg = NULL;
     size_t pending_ogg_size = 0;
     size_t ogg_pos = 0;
@@ -344,11 +349,39 @@ int main(int argc, char** argv)
     {
         switch (state)
         {
+            case STREAM_DISCONNECTED:
+            {
+                size_t dummy;
+                if (ogg_peek(&dummy) != NULL)
+                {
+                    ogg_pop();
+                }
+
+                s = sw_socket_create();
+                sw_socket_set_nonblocking(s, 1);
+                r = sw_connect(s, argv[1], RELAY_PORT);
+                if (r == SW_OK || r == SW_WOULD_BLOCK)
+                {
+                    printf("reconnected!\n");
+                    state = STREAM_HANDSHAKE;
+                    break;
+                }
+
+                sw_socket_close(s);
+                s = SW_INVALID_SOCKET;
+                break;
+            }
             case STREAM_HANDSHAKE:
             {
                 memcpy(ogg.handshake.password, PASSWORD, PASSWORD_LEN);
                 size_t nsent;
                 r = sw_send(s, &ogg.handshake, sizeof(ogg.handshake), &nsent);
+                if (r == SW_ERR)
+                {
+                    printf("disconnected!\n");
+                    state = STREAM_DISCONNECTED;
+                    break;
+                }
                 assert(r == SW_OK);
                 assert(nsent == sizeof(ogg.handshake));
                 pending_ogg = ogg.header_buf;
@@ -398,8 +431,9 @@ int main(int argc, char** argv)
                     r = sw_send(s, pending_ogg + ogg_pos, ogg_remaining, &nsent);
                     if (r != SW_OK)
                     {
-                         state = STREAM_ERROR;
-                         break;
+                        printf("disconnected!\n");
+                        state = STREAM_DISCONNECTED;
+                        break;
                     }
 
                     printf("nsent = %zu\n", nsent);
@@ -412,15 +446,6 @@ int main(int argc, char** argv)
                     ogg_pop();
                 }
 
-                break;
-            }
-            case STREAM_ERROR:
-            {
-                pending_ogg = ogg_peek(&pending_ogg_size);
-                if (pending_ogg)
-                {
-                    ogg_pop();
-                }
                 break;
             }
         }
