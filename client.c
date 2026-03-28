@@ -21,6 +21,7 @@
 #define CAPTURE_CHANNELS (2)
 #define CAPTURE_FORMAT (ma_format_f32)
 
+//#define RELAY_IP "65.21.200.18"
 #define RELAY_PORT (30001)
 
 #define DEBUG_FILE
@@ -283,6 +284,13 @@ static void capture_callback(ma_device* pDevice, void* pOutput, const void* pInp
 
 int main(int argc, char** argv)
 {
+    if (argc < 2)
+    {
+        printf("Usage:\n");
+        printf("blabla\n");
+        return 1;
+    }
+
 #ifdef DEBUG_FILE
     g_debugfile = fopen("debug.ogg", "wb");
 #endif
@@ -298,7 +306,7 @@ int main(int argc, char** argv)
     //sw_socket s = sw_connect("65.21.200.18", 80);
     
     sw_socket s = sw_socket_create();
-    sw_result r = sw_connect(s, "127.0.0.1", RELAY_PORT);
+    sw_result r = sw_connect(s, argv[1], RELAY_PORT);
     assert(r == SW_OK);
 
     ma_result result;
@@ -326,6 +334,7 @@ int main(int argc, char** argv)
         STREAM_HANDSHAKE = 0,
         STREAM_HEADERS,
         STREAM_CHUNKS,
+        STREAM_ERROR,
     } state = STREAM_HANDSHAKE;
     const uint8_t* pending_ogg = NULL;
     size_t pending_ogg_size = 0;
@@ -387,7 +396,11 @@ int main(int argc, char** argv)
 
                     size_t nsent;
                     r = sw_send(s, pending_ogg + ogg_pos, ogg_remaining, &nsent);
-                    assert(r == SW_OK);
+                    if (r != SW_OK)
+                    {
+                         state = STREAM_ERROR;
+                         break;
+                    }
 
                     printf("nsent = %zu\n", nsent);
 
@@ -399,6 +412,15 @@ int main(int argc, char** argv)
                     ogg_pop();
                 }
 
+                break;
+            }
+            case STREAM_ERROR:
+            {
+                pending_ogg = ogg_peek(&pending_ogg_size);
+                if (pending_ogg)
+                {
+                    ogg_pop();
+                }
                 break;
             }
         }

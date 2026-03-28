@@ -298,6 +298,8 @@ int main(int argc, char** argv)
 					}
 					assert(r == SW_OK);
 
+					printf("listener %zu nsent = %zu\n", index, nsent);
+
 					client->http_chunk_cursor += nsent;
 					if (client->http_chunk_cursor == chunk->size)
 					{
