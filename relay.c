@@ -129,6 +129,8 @@ int main(int argc, char** argv)
 			const size_t client_index = client_alloc();
 			printf("listener connected: %zu\n", client_index);
 
+			sw_socket_set_nonblocking(accepted_socket, 1);
+
 			client_t* client = &clients[client_index];
 			client->s = accepted_socket;
 			client->state = CLIENT_AWAIT_STREAMER;
@@ -144,6 +146,7 @@ int main(int argc, char** argv)
 			if (r == SW_OK)
 			{
 				printf("streamer connected\n");
+				sw_socket_set_nonblocking(streamer_socket, 1);
 			}
 		}
 
@@ -222,6 +225,8 @@ int main(int argc, char** argv)
 				const size_t index = i * 64 + bit;
 				client_t* client = &clients[index];
 
+				//printf("client %zu update\n", index);
+
 				if (client->state == CLIENT_AWAIT_STREAMER)
 				{
 					if (streamer_state == STREAMER_STREAM)
@@ -272,6 +277,8 @@ int main(int argc, char** argv)
 					{
 						continue;
 					}
+
+					assert(client->http_chunk_tail < http_chunk_head);
 
 					const http_chunk_t* chunk = &http_chunks[client->http_chunk_tail];
 
