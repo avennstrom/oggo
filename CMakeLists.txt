@@ -14,7 +14,7 @@ target_link_libraries(client PRIVATE ogg vorbis)
 target_link_libraries(relay PRIVATE ogg vorbis)
 
 if(UNIX AND NOT APPLE)
-    target_link_libraries(client PRIVATE dl)
+    target_link_libraries(client PRIVATE dl pthread)
     target_link_libraries(relay PRIVATE dl)
 endif()
 
