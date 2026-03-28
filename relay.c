@@ -3,7 +3,6 @@
 #include "socket.h"
 #include "llhttp/llhttp.h"
 
-#include <intrin.h>
 #include <assert.h>
 #include <stdio.h>
 
@@ -18,9 +17,13 @@ typedef struct {
 
 static inline unsigned _ctz64(unsigned long long x)
 {
+#ifdef _MSC_VER
 	unsigned long idx;
 	_BitScanForward64(&idx, x);
 	return (unsigned)idx;
+#else
+	return __builtin_ctzll(x);
+#endif
 }
 
 static const char g_http_response[] = 
