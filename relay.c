@@ -10,6 +10,12 @@
 #define PASSWORD "125b69e01a6ecb38220b2fd425201f08e6950f09e6daaaf914b26718b88d09ab"
 #define BUFFER_SIZE (64 * 1024 * 1024)
 
+#ifdef _MSC_VER
+#define BIND_ADDRESS "127.0.0.1"
+#else
+#define BIND_ADDRESS "0.0.0.0"
+#endif
+
 typedef struct {
 	char password[64];
 	uint32_t ogg_headers_size;
@@ -100,8 +106,8 @@ int main(int argc, char** argv)
 	sw_socket_set_nonblocking(broadcast_socket, 1);
 	sw_socket_set_nonblocking(streamer_server_socket, 1);
 
-	sw_bind(broadcast_socket, "127.0.0.1", 30000);
-	sw_bind(streamer_server_socket, "127.0.0.1", 30001);
+	sw_bind(broadcast_socket, BIND_ADDRESS, 30000);
+	sw_bind(streamer_server_socket, BIND_ADDRESS, 30001);
 
 	sw_listen(broadcast_socket, 64);
 	sw_listen(streamer_server_socket, 1);
