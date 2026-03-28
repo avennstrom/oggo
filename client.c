@@ -376,6 +376,7 @@ int main(int argc, char** argv)
                 memcpy(ogg.handshake.password, PASSWORD, PASSWORD_LEN);
                 size_t nsent;
                 r = sw_send(s, &ogg.handshake, sizeof(ogg.handshake), &nsent);
+                if (r == SW_WOULD_BLOCK) break;
                 if (r == SW_ERR)
                 {
                     printf("disconnected!\n");
@@ -395,6 +396,7 @@ int main(int argc, char** argv)
 
                 size_t nsent;
                 r = sw_send(s, pending_ogg + ogg_pos, ogg_remaining, &nsent);
+                if (r == SW_WOULD_BLOCK) break;
                 assert(r == SW_OK);
 
                 printf("nsent = %zu\n", nsent);
@@ -429,6 +431,7 @@ int main(int argc, char** argv)
 
                     size_t nsent;
                     r = sw_send(s, pending_ogg + ogg_pos, ogg_remaining, &nsent);
+                    if (r == SW_WOULD_BLOCK) break;
                     if (r != SW_OK)
                     {
                         printf("disconnected!\n");
