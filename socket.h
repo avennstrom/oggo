@@ -179,6 +179,16 @@ extern "C" {
         ssize_t r = send(s, data, len, 0);
 #endif
 
+        if (r > 0) {
+            *sent = (size_t)r;
+            return SW_OK;
+        }
+
+        if (r == 0) {
+            *sent = 0;
+            return SW_CLOSED;
+        }
+
         int err = sw__last_error();
 
         if (sw__would_block(err)) {
@@ -212,16 +222,6 @@ extern "C" {
             return SW_ERR;
         }
 #endif
-
-        if (r > 0) {
-            *sent = (size_t)r;
-            return SW_OK;
-        }
-
-        if (r == 0) {
-            *sent = 0;
-            return SW_CLOSED;
-        }
 
         return SW_ERR;
     }
