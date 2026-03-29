@@ -179,23 +179,7 @@ extern "C" {
         ssize_t r = send(s, data, len, 0);
 #endif
 
-        if (r > 0) {
-            *sent = (size_t)r;
-            return SW_OK;
-        }
-
-        if (r == 0) {
-            *sent = 0;
-            return SW_CLOSED;
-        }
-
         int err = sw__last_error();
-
-        if (sw__would_block(err)) {
-            printf("sw__would_block\n");
-            *sent = 0;
-            return SW_WOULD_BLOCK;
-        }
 
 #ifdef _WIN32
         if (err != 0)
@@ -218,10 +202,26 @@ extern "C" {
         if (err != 0)
         {
             printf("errno=%d: %s\n", err, strerror(err));
-            *sent = 0;
-            return SW_ERR;
+            //*sent = 0;
+            //return SW_ERR;
         }
 #endif
+
+        if (r > 0) {
+            *sent = (size_t)r;
+            return SW_OK;
+        }
+
+        if (r == 0) {
+            *sent = 0;
+            return SW_CLOSED;
+        }
+
+        if (sw__would_block(err)) {
+            printf("sw__would_block\n");
+            *sent = 0;
+            return SW_WOULD_BLOCK;
+        }
 
         return SW_ERR;
     }
