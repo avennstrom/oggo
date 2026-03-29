@@ -50,7 +50,7 @@ static size_t g_http_response_len = sizeof(g_http_response) - 1;
 enum
 {
 	CLIENT_READ_HTTP_REQUEST = 0,
-	CLIENT_AWAIT_STREAMER,
+	//CLIENT_AWAIT_STREAMER,
 	CLIENT_SEND_HTTP_HEADERS,
 	CLIENT_SEND_OGG_HEADERS,
 	CLIENT_SEND_HTTP_CHUNK_HEADER,
@@ -107,7 +107,7 @@ static size_t client_alloc(void)
 static int client__llhttp_on_message_complete(llhttp_t* parser)
 {
 	client_t* client = parser->data;
-	client->state = CLIENT_AWAIT_STREAMER;
+	client->state = CLIENT_SEND_HTTP_HEADERS;
 	return 0;
 }
 
@@ -301,16 +301,18 @@ int main(int argc, char** argv)
 						const llhttp_errno_t err = llhttp_execute(&client->http_parser, buf, nread);
 						assert(err == HPE_OK);
 					}
-					else if (client->state == CLIENT_AWAIT_STREAMER)
-					{
-						if (streamer_state == STREAMER_STREAM)
-						{
-							client->state = CLIENT_SEND_HTTP_HEADERS;
-						}
-					}
+					//else if (client->state == CLIENT_AWAIT_STREAMER)
+					//{
+					//	if (streamer_state == STREAMER_STREAM)
+					//	{
+					//		client->state = CLIENT_SEND_HTTP_HEADERS;
+					//	}
+					//}
 					else if (client->state == CLIENT_SEND_HTTP_HEADERS)
 					{
 						const size_t http_remaining = g_http_response_len - client->http_tail;
+
+						printf("listener %zu http_remaining = %zu\n", index, http_remaining);
 
 						size_t nsent;
 						r = sw_send(client->s, g_http_response + client->http_tail, http_remaining, &nsent);
