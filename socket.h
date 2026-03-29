@@ -160,7 +160,7 @@ sw_result sw_connect(sw_socket s, const char* ip, uint16_t port)
     }
 
     int r = connect(s, (struct sockaddr*)&addr, sizeof(addr));
-    if (r == SOCKET_ERROR)
+    if (r == -1)
     {
         int err = sw__last_error();
         if (sw__would_block(err))
