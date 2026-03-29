@@ -15,6 +15,7 @@ extern "C" {
 #include <winsock2.h>
 #include <ws2tcpip.h>
 typedef SOCKET sw_socket_t;
+#define strcasecmp(a, b) _stricmp(a, b)
 #else
 #include <sys/types.h>
 #include <sys/socket.h>

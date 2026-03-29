@@ -160,7 +160,7 @@ static int client__llhttp_on_header_value_complete(llhttp_t* parser)
 	printf("c[%zu] [HTTP] %s: %s\n", client__index(client), client->header, client->header_val);
 
 	// interesting headers?
-	if (_stricmp(client->header, "user-agent"))
+	if (strcasecmp(client->header, "user-agent"))
 	{
 		strcpy(client->user_agent, client->header_val);
 	}
