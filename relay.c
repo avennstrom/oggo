@@ -8,7 +8,7 @@
 
 #define MAX_CLIENTS (1024)
 #define PASSWORD "125b69e01a6ecb38220b2fd425201f08e6950f09e6daaaf914b26718b88d09ab"
-#define BUFFER_SIZE (64 * 1024)
+#define BUFFER_SIZE (64 * 1024 * 1024)
 #define OGG_HEADER_BUF_SIZE (64 * 1024)
 
 #define LISTENER_PORT (30000)
@@ -49,7 +49,8 @@ static size_t g_http_response_len = sizeof(g_http_response) - 1;
 
 enum
 {
-	CLIENT_AWAIT_STREAMER = 0,
+	CLIENT_READ_HTTP_REQUEST = 0,
+	CLIENT_AWAIT_STREAMER,
 	CLIENT_SEND_HTTP_HEADERS,
 	CLIENT_SEND_OGG_HEADERS,
 	CLIENT_SEND_HTTP_CHUNK_HEADER,
@@ -63,6 +64,7 @@ typedef struct
 	size_t http_chunk_tail;
 	size_t http_chunk_cursor;
 	size_t ogg_headers_cursor;
+	llhttp_t http_parser;
 } client_t;
 
 static client_t clients[MAX_CLIENTS];
@@ -83,6 +85,8 @@ static uint8_t ogg_header_buf[OGG_HEADER_BUF_SIZE];
 static size_t ogg_buf_head = 0;
 static uint8_t ogg_buf[BUFFER_SIZE];
 
+static llhttp_settings_t llhttp_settings;
+
 static size_t client_alloc(void)
 {
 	for (size_t i = 0; i < MAX_CLIENTS / 64; ++i)
@@ -98,6 +102,13 @@ static size_t client_alloc(void)
 	}
 
 	return SIZE_MAX;
+}
+
+static int client__llhttp_on_message_complete(llhttp_t* parser)
+{
+	client_t* client = parser->data;
+	client->state = CLIENT_AWAIT_STREAMER;
+	return 0;
 }
 
 int main(int argc, char** argv)
@@ -127,6 +138,9 @@ int main(int argc, char** argv)
 	sw_socket streamer_socket = SW_INVALID_SOCKET;
 	stream_handshake_t streamer_handshake = {0};
 
+	llhttp_settings_init(&llhttp_settings);
+	llhttp_settings.on_message_complete = client__llhttp_on_message_complete;
+
 	for (;;)
 	{
 		sw_socket accepted_socket;
@@ -140,11 +154,14 @@ int main(int argc, char** argv)
 
 			client_t* client = &clients[client_index];
 			client->s = accepted_socket;
-			client->state = CLIENT_AWAIT_STREAMER;
+			client->state = CLIENT_READ_HTTP_REQUEST;
 			client->http_tail = 0;
 			client->http_chunk_cursor = 0;
 			client->http_chunk_tail = http_chunk_head;
 			client->ogg_headers_cursor = 0;
+			llhttp_init(&client->http_parser, HTTP_REQUEST, &llhttp_settings);
+			client->http_parser.data = client;
+			//llhttp_reset(&client->http_parser);
 		}
 
 		if (streamer_socket == SW_INVALID_SOCKET)
@@ -266,7 +283,23 @@ int main(int argc, char** argv)
 
 					//printf("client %zu update\n", index);
 
-					if (client->state == CLIENT_AWAIT_STREAMER)
+					if (client->state == CLIENT_READ_HTTP_REQUEST)
+					{
+						char buf[4096];
+						size_t nread;
+						r = sw_recv(client->s, buf, sizeof(buf), &nread);
+						if (r == SW_WOULD_BLOCK) continue;
+						if (r != SW_OK)
+						{
+							printf("listener %zu disconnected\n", index);
+							client_alloc_mask[i] &= ~(1ull << bit);
+							continue;
+						}
+
+						const llhttp_errno_t err = llhttp_execute(&client->http_parser, buf, nread);
+						assert(err == HPE_OK);
+					}
+					else if (client->state == CLIENT_AWAIT_STREAMER)
 					{
 						if (streamer_state == STREAMER_STREAM)
 						{
