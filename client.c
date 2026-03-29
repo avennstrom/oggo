@@ -310,7 +310,7 @@ int main(int argc, char** argv)
     //sw_result r = sw_connect(s, argv[1], RELAY_PORT);
     //assert(r == SW_OK);
 
-    sw_socket s;
+    sw_socket_t s;
     sw_result r;
 
     ma_result result;
@@ -359,10 +359,10 @@ int main(int argc, char** argv)
                 printf("connecting to %s:%d\n", argv[1], RELAY_PORT);
 
                 s = sw_socket_create();
-                //sw_socket_set_nonblocking(s, 1);
                 r = sw_connect(s, argv[1], RELAY_PORT);
-                if (r == SW_OK || r == SW_WOULD_BLOCK)
+                if (r == SW_OK)
                 {
+                    //sw_socket_set_nonblocking(s, 1);
                     state = STREAM_HANDSHAKE;
                     break;
                 }

@@ -8,11 +8,13 @@ extern "C" {
 
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
+#include <stdio.h>
 
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
-typedef SOCKET sw_socket;
+typedef SOCKET sw_socket_t;
 #else
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -20,7 +22,9 @@ typedef SOCKET sw_socket;
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
-typedef int sw_socket;
+#include <time.h>
+#include <sys/time.h>
+typedef int sw_socket_t;
 #endif
 
 #define SW_INVALID_SOCKET (-1)
@@ -36,24 +40,37 @@ int  sw_init(void);
 void sw_shutdown(void);
 
 /* socket ops */
-sw_socket sw_socket_create(void);
-void      sw_socket_close(sw_socket s);
+sw_socket_t sw_socket_create(void);
+void      sw_socket_close(sw_socket_t s);
 
 /* configure */
-int sw_socket_set_nonblocking(sw_socket s, int enabled);
-int sw_socket_set_reuseaddr(sw_socket s, int enabled);
+int sw_socket_set_nonblocking(sw_socket_t s, int enabled);
+int sw_socket_set_reuseaddr(sw_socket_t s, int enabled);
 
 /* client */
-sw_result sw_connect(sw_socket s, const char* ip, uint16_t port);
+sw_result sw_connect(sw_socket_t s, const char* ip, uint16_t port);
 
 /* server */
-sw_result sw_bind(sw_socket s, uint16_t port);
-sw_result sw_listen(sw_socket s, int backlog);
-sw_result sw_accept(sw_socket s, sw_socket* out_client);
+sw_result sw_bind(sw_socket_t s, uint16_t port);
+sw_result sw_listen(sw_socket_t s, int backlog);
+sw_result sw_accept(sw_socket_t s, sw_socket_t* out_client);
 
 /* io */
-sw_result sw_send(sw_socket s, const void* data, size_t len, size_t* sent);
-sw_result sw_recv(sw_socket s, void* buffer, size_t len, size_t* received);
+sw_result sw_send(sw_socket_t s, const void* data, size_t len, size_t* sent);
+sw_result sw_recv(sw_socket_t s, void* buffer, size_t len, size_t* received);
+
+void sw_http_date_now(char out[64])
+{
+    time_t now = time(NULL);
+    struct tm tm;
+#ifdef _WIN32
+    gmtime_s(&tm, &now);          /* Windows */
+#else
+    gmtime_r(&now, &tm);          /* POSIX */
+#endif
+    /* RFC1123 format: Mon, 29 Mar 2026 00:00:00 GMT */
+    strftime(out, 64, "Date: %a, %d %b %Y %H:%M:%S GMT\r\n", &tm);
+}
 
 static inline unsigned _ctz64(unsigned long long x)
 {
@@ -103,8 +120,8 @@ void sw_shutdown(void) {
 #endif
 }
 
-sw_socket sw_socket_create(void) {
-    sw_socket s = socket(AF_INET, SOCK_STREAM, 0);
+sw_socket_t sw_socket_create(void) {
+    sw_socket_t s = socket(AF_INET, SOCK_STREAM, 0);
 #ifdef _WIN32
     if (s == INVALID_SOCKET) return SW_INVALID_SOCKET;
 #else
@@ -113,7 +130,7 @@ sw_socket sw_socket_create(void) {
     return s;
 }
 
-void sw_socket_close(sw_socket s) {
+void sw_socket_close(sw_socket_t s) {
 #ifdef _WIN32
     closesocket(s);
 #else
@@ -121,7 +138,7 @@ void sw_socket_close(sw_socket s) {
 #endif
 }
 
-int sw_socket_set_nonblocking(sw_socket s, int enabled) {
+int sw_socket_set_nonblocking(sw_socket_t s, int enabled) {
 #ifdef _WIN32
     u_long mode = enabled ? 1 : 0;
     return ioctlsocket(s, FIONBIO, &mode) == 0 ? 0 : -1;
@@ -134,7 +151,7 @@ int sw_socket_set_nonblocking(sw_socket s, int enabled) {
 #endif
 }
 
-int sw_socket_set_reuseaddr(sw_socket s, int enabled) {
+int sw_socket_set_reuseaddr(sw_socket_t s, int enabled) {
     int opt = enabled ? 1 : 0;
     return setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt)) == 0 ? 0 : -1;
 }
@@ -147,7 +164,7 @@ static int sw__would_block(int err) {
 #endif
 }
 
-sw_result sw_connect(sw_socket s, const char* ip, uint16_t port)
+sw_result sw_connect(sw_socket_t s, const char* ip, uint16_t port)
 {
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -175,7 +192,7 @@ sw_result sw_connect(sw_socket s, const char* ip, uint16_t port)
     return SW_OK;
 }
 
-sw_result sw_bind(sw_socket s, uint16_t port)
+sw_result sw_bind(sw_socket_t s, uint16_t port)
 {
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -200,7 +217,7 @@ sw_result sw_bind(sw_socket s, uint16_t port)
     return SW_OK;
 }
 
-sw_result sw_listen(sw_socket s, int backlog)
+sw_result sw_listen(sw_socket_t s, int backlog)
 {
     if (listen(s, backlog) != 0)
     {
@@ -210,7 +227,7 @@ sw_result sw_listen(sw_socket s, int backlog)
     return SW_OK;
 }
 
-sw_result sw_accept(sw_socket s, sw_socket* out_client)
+sw_result sw_accept(sw_socket_t s, sw_socket_t* out_client)
 {
     struct sockaddr_in addr;
 #ifdef _WIN32
@@ -219,7 +236,7 @@ sw_result sw_accept(sw_socket s, sw_socket* out_client)
     socklen_t len = sizeof(addr);
 #endif
 
-    sw_socket c = accept(s, (struct sockaddr*)&addr, &len);
+    sw_socket_t c = accept(s, (struct sockaddr*)&addr, &len);
 #ifdef _WIN32
     if (c == INVALID_SOCKET) {
         int err = sw__last_error();
@@ -263,7 +280,7 @@ void hexdump(const void *data, size_t len) {
     }
 }
 
-sw_result sw_send(sw_socket s, const void* data, size_t len, size_t* sent)
+sw_result sw_send(sw_socket_t s, const void* data, size_t len, size_t* sent)
 {
 #ifdef _WIN32
     int r = send(s, (const char*)data, (int)len, 0);
@@ -294,7 +311,7 @@ sw_result sw_send(sw_socket s, const void* data, size_t len, size_t* sent)
     return SW_OK;
 }
 
-sw_result sw_recv(sw_socket s, void* buffer, size_t len, size_t* received)
+sw_result sw_recv(sw_socket_t s, void* buffer, size_t len, size_t* received)
 {
 #ifdef _WIN32
     int r = recv(s, (char*)buffer, (int)len, 0);
