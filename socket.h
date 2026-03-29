@@ -198,8 +198,9 @@ extern "C" {
             LocalFree(errString);
         }
 #else
-        if (err == EPIPE)
+        if (err != 0)
         {
+            printf("errno=%d: %s\n", errno, strerror(errno));
             *sent = 0;
             return SW_CLOSED;
         }
