@@ -230,10 +230,11 @@ int main(int argc, char** argv)
 					{
 						printf("nread = %zu, http_chunk_head = %zu\n", nread, http_chunk_head);
 
-						http_chunks[http_chunk_head++] = (http_chunk_t){
+						http_chunks[http_chunk_head % HTTP_CHUNK_COUNT] = (http_chunk_t){
 							.size = nread,
 							.data = ogg_buf + ogg_buf_head,
 						};
+						++http_chunk_head;
 
 						ogg_buf_head += nread;
 					}
@@ -365,7 +366,7 @@ int main(int argc, char** argv)
 
 						assert(client->http_chunk_tail < http_chunk_head);
 
-						const http_chunk_t* chunk = &http_chunks[client->http_chunk_tail];
+						const http_chunk_t* chunk = &http_chunks[client->http_chunk_tail % HTTP_CHUNK_COUNT];
 
 						char chunklen[16];
 						int n = sprintf(chunklen, "%zX\r\n", chunk->size);
@@ -388,7 +389,7 @@ int main(int argc, char** argv)
 					{
 						assert(client->http_chunk_tail != http_chunk_head);
 
-						const http_chunk_t* chunk = &http_chunks[client->http_chunk_tail];
+						const http_chunk_t* chunk = &http_chunks[client->http_chunk_tail % HTTP_CHUNK_COUNT];
 						assert(client->http_chunk_cursor < chunk->size);
 
 						const size_t http_remaining = chunk->size - client->http_chunk_cursor;

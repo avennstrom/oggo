@@ -201,7 +201,7 @@ extern "C" {
             LocalFree(errString);
         }
 #else
-        if (err != 0)
+        if (err != 0 && err != EAGAIN)
         {
             printf("errno=%d: %s\n", err, strerror(err));
             //*sent = 0;
