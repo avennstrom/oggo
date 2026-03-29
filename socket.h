@@ -174,7 +174,7 @@ extern "C" {
     }
 
     sw_result sw_send(sw_socket s, const void* data, size_t len, size_t* sent) {
-        hexdump(data, len);
+        //hexdump(data, len);
 #ifdef _WIN32
         int r = send(s, (const char*)data, (int)len, 0);
 #else
