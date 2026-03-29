@@ -179,19 +179,44 @@ extern "C" {
         ssize_t r = send(s, data, len, 0);
 #endif
 
+        int err = sw__last_error();
+#ifdef _WIN32
+        if (err != 0)
+        {
+            LPSTR errString = NULL;
+
+            FormatMessage(
+                FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+                NULL,
+                err,
+                0,
+                (LPSTR)&errString,
+                0,
+                NULL
+            );
+            printf("%s\n", errString);
+            LocalFree(errString);
+        }
+#else
+        if (err == EPIPE)
+        {
+            *sent = 0;
+            return SW_CLOSED;
+        }
+#endif
+
         if (r > 0) {
-            if (sent) *sent = (size_t)r;
+            *sent = (size_t)r;
             return SW_OK;
         }
 
         if (r == 0) {
-            if (sent) *sent = 0;
+            *sent = 0;
             return SW_CLOSED;
         }
 
-        int err = sw__last_error();
         if (sw__would_block(err)) {
-            if (sent) *sent = 0;
+            *sent = 0;
             return SW_WOULD_BLOCK;
         }
 
