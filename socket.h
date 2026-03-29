@@ -200,7 +200,7 @@ extern "C" {
 #else
         if (err != 0)
         {
-            printf("errno=%d: %s\n", errno, strerror(errno));
+            printf("errno=%d: %s\n", err, strerror(err));
             *sent = 0;
             return SW_CLOSED;
         }
