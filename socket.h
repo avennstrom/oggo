@@ -178,7 +178,7 @@ extern "C" {
 #ifdef _WIN32
         int r = send(s, (const char*)data, (int)len, 0);
 #else
-        ssize_t r = send(s, data, len, 0);
+        ssize_t r = send(s, data, len, MSG_NOSIGNAL);
 #endif
 
         int err = sw__last_error();
