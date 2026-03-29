@@ -1,10 +1,10 @@
-#include "socket.h"
 #define SW_SOCKET_IMPLEMENTATION
 #include "socket.h"
 #include "llhttp/llhttp.h"
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #define MAX_CLIENTS (1024)
 #define PASSWORD "125b69e01a6ecb38220b2fd425201f08e6950f09e6daaaf914b26718b88d09ab"
@@ -16,27 +16,10 @@
 
 #define HTTP_CHUNK_COUNT (1024)
 
-#ifdef _MSC_VER
-#define BIND_ADDRESS "127.0.0.1"
-#else
-#define BIND_ADDRESS "0.0.0.0"
-#endif
-
 typedef struct {
 	char password[64];
 	uint32_t ogg_headers_size;
 } stream_handshake_t;
-
-static inline unsigned _ctz64(unsigned long long x)
-{
-#ifdef _MSC_VER
-	unsigned long idx;
-	_BitScanForward64(&idx, x);
-	return (unsigned)idx;
-#else
-	return __builtin_ctzll(x);
-#endif
-}
 
 static const char g_http_response[] = 
 	"HTTP/1.1 200 OK\r\n"
@@ -64,11 +47,23 @@ typedef struct
 	size_t http_chunk_tail;
 	size_t http_chunk_cursor;
 	size_t ogg_headers_cursor;
+
+	// http parsing state
 	llhttp_t http_parser;
+	size_t header_len;
+	size_t header_val_len;
+	char header[256];
+	char header_val[256];
+	char user_agent[256];
 } client_t;
 
 static client_t clients[MAX_CLIENTS];
 static uint64_t client_alloc_mask[MAX_CLIENTS / 64];
+
+static inline size_t client__index(client_t* client)
+{
+	return client - clients;
+}
 
 typedef struct
 {
@@ -104,6 +99,68 @@ static size_t client_alloc(void)
 	return SIZE_MAX;
 }
 
+static int client__llhttp_on_message_begin(llhttp_t* parser)
+{
+	client_t* client = parser->data;
+	client->header_len = 0;
+	client->header_val_len = 0;
+	return 0;
+}
+
+static int client__llhttp_on_header_field(llhttp_t* parser, const char* at, size_t len)
+{
+	client_t* client = parser->data;
+
+	const size_t remaining = (sizeof(client->header) - 1) - client->header_len;
+	if (len > remaining) len = remaining;
+	if (len == 0) return 0;
+
+	memcpy(client->header + client->header_len, at, len);
+	client->header_len += len;
+	return 0;
+}
+
+static int client__llhttp_on_header_field_complete(llhttp_t* parser)
+{
+	client_t* client = parser->data;
+	assert(client->header_len < sizeof(client->header));
+	client->header[client->header_len] = '\0';
+	return 0;
+}
+
+
+static int client__llhttp_on_header_value(llhttp_t* parser, const char* at, size_t len)
+{
+	client_t* client = parser->data;
+
+	const size_t remaining = (sizeof(client->header_val) - 1) - client->header_val_len;
+	if (len > remaining) len = remaining;
+	if (len == 0) return 0;
+
+	memcpy(client->header_val + client->header_val_len, at, len);
+	client->header_val_len += len;
+	return 0;
+}
+
+static int client__llhttp_on_header_value_complete(llhttp_t* parser)
+{
+	client_t* client = parser->data;
+	assert(client->header_val_len < sizeof(client->header_val));
+	client->header_val[client->header_val_len] = '\0';
+
+	printf("c[%zu] %s: %s\n", client__index(client), client->header, client->header_val);
+
+	// interesting headers?
+	if (_stricmp(client->header, "user-agent"))
+	{
+		strcpy(client->user_agent, client->header_val);
+	}
+
+	client->header_len = 0;
+	client->header_val_len = 0;
+	return 0;
+}
+
 static int client__llhttp_on_message_complete(llhttp_t* parser)
 {
 	client_t* client = parser->data;
@@ -115,6 +172,14 @@ int main(int argc, char** argv)
 {
 	sw_result r;
 
+	llhttp_settings_init(&llhttp_settings);
+	llhttp_settings.on_message_begin = client__llhttp_on_message_begin;
+	llhttp_settings.on_header_field = client__llhttp_on_header_field;
+	llhttp_settings.on_header_field_complete = client__llhttp_on_header_field_complete;
+	llhttp_settings.on_header_value = client__llhttp_on_header_value;
+	llhttp_settings.on_header_value_complete = client__llhttp_on_header_value_complete;
+	llhttp_settings.on_message_complete = client__llhttp_on_message_complete;
+
 	sw_init();
 
 	sw_socket broadcast_socket = sw_socket_create();
@@ -123,23 +188,24 @@ int main(int argc, char** argv)
 	sw_socket_set_nonblocking(broadcast_socket, 1);
 	sw_socket_set_nonblocking(streamer_server_socket, 1);
 
-	sw_bind(broadcast_socket, BIND_ADDRESS, LISTENER_PORT);
+	sw_bind(broadcast_socket, LISTENER_PORT);
 	sw_listen(broadcast_socket, 64);
 	printf("Listening for listeners on port %d\n", LISTENER_PORT);
-	sw_bind(streamer_server_socket, BIND_ADDRESS, STREAMER_PORT);
+	sw_bind(streamer_server_socket, STREAMER_PORT);
 	sw_listen(streamer_server_socket, 1);
 	printf("Listening for streamer on port %d\n", STREAMER_PORT);
 
-	enum {
-		STREAMER_HANDSHAKE = 0,
-		STREAMER_OGG_HEADERS,
-		STREAMER_STREAM,
-	} streamer_state = STREAMER_HANDSHAKE;
-	sw_socket streamer_socket = SW_INVALID_SOCKET;
-	stream_handshake_t streamer_handshake = {0};
-
-	llhttp_settings_init(&llhttp_settings);
-	llhttp_settings.on_message_complete = client__llhttp_on_message_complete;
+	struct streamer {
+		enum {
+			STREAMER_HANDSHAKE = 0,
+			STREAMER_OGG_HEADERS,
+			STREAMER_STREAM,
+		} state;
+		sw_socket s;
+		stream_handshake_t handshake;
+	} streamer = {
+		.s = SW_INVALID_SOCKET,
+	};
 
 	for (;;)
 	{
@@ -148,8 +214,7 @@ int main(int argc, char** argv)
 		if (r == SW_OK)
 		{
 			const size_t client_index = client_alloc();
-			printf("listener connected: %zu\n", client_index);
-
+			printf("c[%zu] accepted\n", client_index);
 			sw_socket_set_nonblocking(accepted_socket, 1);
 
 			client_t* client = &clients[client_index];
@@ -164,93 +229,11 @@ int main(int argc, char** argv)
 			//llhttp_reset(&client->http_parser);
 		}
 
-		if (streamer_socket == SW_INVALID_SOCKET)
+		// only accept a single streamer!
+		if (streamer.s == SW_INVALID_SOCKET)
 		{
-			r = sw_accept(streamer_server_socket, &streamer_socket);
-			if (r == SW_OK)
-			{
-				printf("streamer connected\n");
-				sw_socket_set_nonblocking(streamer_socket, 1);
-				ogg_header_buf_pos = 0;
-				http_chunk_head = 0;
-				streamer_state = STREAMER_HANDSHAKE;
-			}
-		}
-
-		if (streamer_socket != SW_INVALID_SOCKET)
-		{
-			switch (streamer_state)
-			{
-				case STREAMER_HANDSHAKE:
-				{
-					size_t nread;
-					r = sw_recv(streamer_socket, &streamer_handshake, sizeof(streamer_handshake), &nread);
-					if (r == SW_WOULD_BLOCK) break;
-					if (r != SW_OK)
-					{
-						printf("streamer disconnected!\n");
-						streamer_socket = SW_INVALID_SOCKET;
-						break;
-					}
-					assert(nread == sizeof(streamer_handshake));
-
-					if (memcmp(streamer_handshake.password, PASSWORD, sizeof(streamer_handshake.password)) != 0)
-					{
-						sw_socket_close(streamer_socket);
-						break;
-					}
-
-					printf("handshake (ogg_headers_size = %u)\n", streamer_handshake.ogg_headers_size);
-
-					ogg_header_hexlen_size = sprintf(ogg_header_buf + ogg_header_buf_pos, "%X\r\n", streamer_handshake.ogg_headers_size);
-					ogg_header_buf_pos += ogg_header_hexlen_size;
-
-					streamer_state = STREAMER_OGG_HEADERS;
-					break;
-				}
-				case STREAMER_OGG_HEADERS:
-				{
-					size_t nread;
-					r = sw_recv(streamer_socket, ogg_header_buf + ogg_header_buf_pos, ogg_header_hexlen_size + streamer_handshake.ogg_headers_size - ogg_header_buf_pos, &nread);
-					if (r == SW_WOULD_BLOCK) break;
-					ogg_header_buf_pos += nread;
-					if (ogg_header_buf_pos == ogg_header_hexlen_size + streamer_handshake.ogg_headers_size)
-					{
-						ogg_header_buf_pos += sprintf(ogg_header_buf + ogg_header_buf_pos, "\r\n", 2);
-						streamer_state = STREAMER_STREAM;
-						break;
-					}
-					break;
-				}
-				case STREAMER_STREAM:
-				{
-					size_t nread;
-					r = sw_recv(streamer_socket, ogg_buf + ogg_buf_head, 64 * 1024, &nread);
-					if ((r == SW_OK || r == SW_WOULD_BLOCK) && nread > 0)
-					{
-						printf("nread = %zu, http_chunk_head = %zu\n", nread, http_chunk_head);
-
-						http_chunks[http_chunk_head % HTTP_CHUNK_COUNT] = (http_chunk_t){
-							.size = nread,
-							.data = ogg_buf + ogg_buf_head,
-						};
-						++http_chunk_head;
-
-						ogg_buf_head += nread;
-					}
-					else if (r == SW_ERR || r == SW_CLOSED)
-					{
-						printf("streamer disconnected!\n");
-						streamer_socket = SW_INVALID_SOCKET;
-						break;
-					}
-				}
-				break;
-			}
-		}
-
-		if (streamer_socket == SW_INVALID_SOCKET)
-		{
+			// disconnect all listeners
+			// :TODO: maybe we want to send empty frames or elevator music when there is not streamer live
 			for (size_t i = 0; i < MAX_CLIENTS / 64; ++i)
 			{
 				uint64_t mask = client_alloc_mask[i];
@@ -269,9 +252,92 @@ int main(int argc, char** argv)
 
 				client_alloc_mask[i] = 0;
 			}
+
+			r = sw_accept(streamer_server_socket, &streamer.s);
+			if (r == SW_OK)
+			{
+				printf("streamer connected\n");
+				sw_socket_set_nonblocking(streamer.s, 1);
+				ogg_header_buf_pos = 0;
+				http_chunk_head = 0;
+				streamer.state = STREAMER_HANDSHAKE;
+			}
 		}
-		else
+
+		if (streamer.s != SW_INVALID_SOCKET)
 		{
+			switch (streamer.state)
+			{
+				case STREAMER_HANDSHAKE:
+				{
+					size_t nread;
+					r = sw_recv(streamer.s, &streamer.handshake, sizeof(streamer.handshake), &nread);
+					if (r == SW_WOULD_BLOCK) break;
+					if (r != SW_OK)
+					{
+						printf("streamer disconnected!\n");
+						streamer.s = SW_INVALID_SOCKET;
+						break;
+					}
+					assert(nread == sizeof(streamer.handshake));
+
+					if (memcmp(streamer.handshake.password, PASSWORD, sizeof(streamer.handshake.password)) != 0)
+					{
+						sw_socket_close(streamer.s);
+						break;
+					}
+
+					printf("<<<< streamer handshake (ogg_headers_size = %u)\n", streamer.handshake.ogg_headers_size);
+					hexdump(&streamer.handshake, sizeof(streamer.handshake));
+
+					ogg_header_hexlen_size = sprintf(ogg_header_buf + ogg_header_buf_pos, "%X\r\n", streamer.handshake.ogg_headers_size);
+					ogg_header_buf_pos += ogg_header_hexlen_size;
+
+					streamer.state = STREAMER_OGG_HEADERS;
+					break;
+				}
+				case STREAMER_OGG_HEADERS:
+				{
+					size_t nread;
+					r = sw_recv(streamer.s, ogg_header_buf + ogg_header_buf_pos, ogg_header_hexlen_size + streamer.handshake.ogg_headers_size - ogg_header_buf_pos, &nread);
+					if (r == SW_WOULD_BLOCK) break;
+					ogg_header_buf_pos += nread;
+					if (ogg_header_buf_pos == ogg_header_hexlen_size + streamer.handshake.ogg_headers_size)
+					{
+						ogg_header_buf_pos += sprintf(ogg_header_buf + ogg_header_buf_pos, "\r\n", 2);
+						streamer.state = STREAMER_STREAM;
+						break;
+					}
+					break;
+				}
+				case STREAMER_STREAM:
+				{
+					size_t nread;
+					r = sw_recv(streamer.s, ogg_buf + ogg_buf_head, 64 * 1024, &nread);
+					if (r == SW_WOULD_BLOCK) break;
+					if (r != SW_OK)
+					{
+						printf("streamer disconnected!\n");
+						streamer.s = SW_INVALID_SOCKET;
+						break;
+					}
+					assert(nread > 0);
+
+					//printf("nread = %zu\n", nread);
+
+					http_chunks[http_chunk_head % HTTP_CHUNK_COUNT] = (http_chunk_t){
+						.size = nread,
+						.data = ogg_buf + ogg_buf_head,
+					};
+					++http_chunk_head;
+
+					ogg_buf_head += nread;
+				}
+				break;
+			}
+
+			size_t min_http_chunk_tail = http_chunk_head;
+
 			for (size_t i = 0; i < MAX_CLIENTS / 64; ++i)
 			{
 				uint64_t mask = client_alloc_mask[i];
@@ -284,6 +350,21 @@ int main(int argc, char** argv)
 
 					//printf("client %zu update\n", index);
 
+					if (0)
+					{
+					_disconnect:
+						printf("c[%zu] disconnected\n", index);
+						client_alloc_mask[i] &= ~(1ull << bit);
+						sw_socket_close(client->s);
+						client->s = SW_INVALID_SOCKET;
+						continue;
+					}
+
+					if (min_http_chunk_tail > client->http_chunk_tail)
+					{
+						min_http_chunk_tail = client->http_chunk_tail;
+					}
+
 					if (client->state == CLIENT_READ_HTTP_REQUEST)
 					{
 						char buf[4096];
@@ -292,15 +373,17 @@ int main(int argc, char** argv)
 						if (r == SW_WOULD_BLOCK) continue;
 						if (r != SW_OK)
 						{
-							printf("listener %zu disconnected\n", index);
-							client_alloc_mask[i] &= ~(1ull << bit);
-							continue;
+							goto _disconnect;
 						}
 
-						printf("listener %zu HTTP nread = %zu\n", index, nread);
+						//printf("<<<< listener [%zu] HTTP nread = %zu\n", index, nread);
+						//hexdump(buf, nread);
 
 						const llhttp_errno_t err = llhttp_execute(&client->http_parser, buf, nread);
-						assert(err == HPE_OK);
+						if (err != HPE_OK)
+						{
+							goto _disconnect;
+						}
 					}
 					//else if (client->state == CLIENT_AWAIT_STREAMER)
 					//{
@@ -313,16 +396,17 @@ int main(int argc, char** argv)
 					{
 						const size_t http_remaining = g_http_response_len - client->http_tail;
 
-						printf("listener %zu http_remaining = %zu\n", index, http_remaining);
+						//printf("listener %zu http_remaining = %zu\n", index, http_remaining);
+
+						//printf(">>>>\n");
+						//hexdump(g_http_response + client->http_tail, http_remaining);
 
 						size_t nsent;
 						r = sw_send(client->s, g_http_response + client->http_tail, http_remaining, &nsent);
 						if (r == SW_WOULD_BLOCK) continue;
 						if (r != SW_OK)
 						{
-							printf("listener %zu disconnected\n", index);
-							client_alloc_mask[i] &= ~(1ull << bit);
-							continue;
+							goto _disconnect;
 						}
 
 						client->http_tail += nsent;
@@ -342,16 +426,14 @@ int main(int argc, char** argv)
 						if (r == SW_WOULD_BLOCK) continue;
 						if (r != SW_OK)
 						{
-							printf("listener %zu disconnected\n", index);
-							client_alloc_mask[i] &= ~(1ull << bit);
-							continue;
+							goto _disconnect;
 						}
 						//assert(r == SW_OK);
 
 						client->ogg_headers_cursor += nsent;
 						if (client->ogg_headers_cursor == ogg_header_buf_pos)
 						{
-							printf("OGG headers sent to listener\n");
+							printf("c[%zu] OGG headers sent (%zu bytes)\n", index, ogg_header_buf_pos);
 							client->state = CLIENT_SEND_HTTP_CHUNK_HEADER;
 						}
 					}
@@ -362,7 +444,7 @@ int main(int argc, char** argv)
 							continue;
 						}
 
-						printf("http_chunk_tail = %zu\n", client->http_chunk_tail);
+						//printf("http_chunk_tail = %zu\n", client->http_chunk_tail);
 
 						assert(client->http_chunk_tail < http_chunk_head);
 
@@ -376,9 +458,7 @@ int main(int argc, char** argv)
 						if (r == SW_WOULD_BLOCK) continue;
 						if (r != SW_OK)
 						{
-							printf("listener %zu disconnected\n", index);
-							client_alloc_mask[i] &= ~(1ull << bit);
-							continue;
+							goto _disconnect;
 						}
 
 						assert(nsent == n);
@@ -394,20 +474,18 @@ int main(int argc, char** argv)
 
 						const size_t http_remaining = chunk->size - client->http_chunk_cursor;
 
-						printf("http_remaining = %zu\n", http_remaining);
+						//printf("http_remaining = %zu\n", http_remaining);
 
 						size_t nsent;
 						r = sw_send(client->s, chunk->data + client->http_chunk_cursor, http_remaining, &nsent);
 						if (r == SW_WOULD_BLOCK) continue;
 						if (r == SW_ERR || r == SW_CLOSED)
 						{
-							printf("listener %zu disconnected\n", index);
-							client_alloc_mask[i] &= ~(1ull << bit);
-							continue;
+							goto _disconnect;
 						}
 						assert(r == SW_OK);
 
-						printf("listener %zu nsent = %zu\n", index, nsent);
+						//printf("listener %zu nsent = %zu\n", index, nsent);
 
 						client->http_chunk_cursor += nsent;
 						if (client->http_chunk_cursor == chunk->size)
@@ -425,6 +503,8 @@ int main(int argc, char** argv)
 					}
 				}
 			}
+
+			//printf("HTTP chunk tail = %zu\n", min_http_chunk_tail);
 		}
 	}
 

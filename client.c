@@ -1,5 +1,4 @@
 #include "miniaudio.h"
-#include "socket.h"
 #define SW_SOCKET_IMPLEMENTATION
 #include "socket.h"
 
@@ -85,6 +84,8 @@ static void ogg_pop(void)
         assert(ogg.chunks_head == popped);
         ogg.chunks_head = NULL;
     }
+
+    free(popped);
 }
 
 static int ogg__append_header(const ogg_page* page)
@@ -250,8 +251,6 @@ static void pcm_deinterleave(float* out_l, float* out_r, const float* in_lr, siz
     }
 }
 
-static float t = 0.0f;
-
 static void capture_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frame_count)
 {
     (void)pDevice;
@@ -352,10 +351,12 @@ int main(int argc, char** argv)
             case STREAM_DISCONNECTED:
             {
                 size_t dummy;
-                if (ogg_peek(&dummy) != NULL)
+                while (ogg_peek(&dummy) != NULL)
                 {
                     ogg_pop();
                 }
+
+                printf("connecting to %s:%d\n", argv[1], RELAY_PORT);
 
                 s = sw_socket_create();
                 //sw_socket_set_nonblocking(s, 1);
