@@ -182,6 +182,7 @@ extern "C" {
         int err = sw__last_error();
 
         if (sw__would_block(err)) {
+            printf("sw__would_block\n");
             *sent = 0;
             return SW_WOULD_BLOCK;
         }
