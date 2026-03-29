@@ -208,7 +208,7 @@ extern "C" {
         {
             printf("errno=%d: %s\n", err, strerror(err));
             *sent = 0;
-            return SW_CLOSED;
+            return SW_ERR;
         }
 #endif
 

@@ -296,6 +296,8 @@ int main(int argc, char** argv)
 							continue;
 						}
 
+						printf("listener %zu HTTP nread = %zu\n", index, nread);
+
 						const llhttp_errno_t err = llhttp_execute(&client->http_parser, buf, nread);
 						assert(err == HPE_OK);
 					}
