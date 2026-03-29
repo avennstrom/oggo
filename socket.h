@@ -7,6 +7,7 @@ extern "C" {
 #ifdef SW_SOCKET_IMPLEMENTATION
 
 #include <string.h>
+#include <signal.h>
 
 #ifdef _WIN32
     static int sw__last_error(void) { return WSAGetLastError(); }
@@ -20,6 +21,7 @@ extern "C" {
         WSADATA wsa;
         return WSAStartup(MAKEWORD(2,2), &wsa) == 0 ? 0 : -1;
 #else
+        signal(SIGPIPE, SIG_IGN);
         return 0;
 #endif
     }
