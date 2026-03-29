@@ -180,6 +180,12 @@ extern "C" {
 #endif
 
         int err = sw__last_error();
+
+        if (sw__would_block(err)) {
+            *sent = 0;
+            return SW_WOULD_BLOCK;
+        }
+
 #ifdef _WIN32
         if (err != 0)
         {
@@ -214,11 +220,6 @@ extern "C" {
         if (r == 0) {
             *sent = 0;
             return SW_CLOSED;
-        }
-
-        if (sw__would_block(err)) {
-            *sent = 0;
-            return SW_WOULD_BLOCK;
         }
 
         return SW_ERR;
