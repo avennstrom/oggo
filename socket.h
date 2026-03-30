@@ -157,11 +157,21 @@ int sw_socket_set_reuseaddr(sw_socket_t s, int enabled) {
     return setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt)) == 0 ? 0 : -1;
 }
 
-static int sw__would_block(int err) {
+static int sw__would_block(int err)
+{
 #ifdef _WIN32
     return err == WSAEWOULDBLOCK || err == WSAEINPROGRESS;
 #else
     return err == EWOULDBLOCK || err == EAGAIN;
+#endif
+}
+
+static int sw__disconnected(int err)
+{
+#ifdef _WIN32
+    return err == WSAECONNRESET || err == WSAEINPROGRESS;
+#else
+    return err == EPIPE;
 #endif
 }
 
@@ -297,12 +307,10 @@ sw_result sw_send(sw_socket_t s, const void* data, size_t len, size_t* sent)
             return SW_WOULD_BLOCK;
         }
 
-#ifdef _WIN32
-        if (err == WSAECONNRESET || err == WSAECONNABORTED)
+        if (sw__disconnected(err))
         {
             return SW_CLOSED;
         }
-#endif
 
         return SW_ERR;
     }
@@ -333,12 +341,10 @@ sw_result sw_recv(sw_socket_t s, void* buffer, size_t len, size_t* received)
             return SW_WOULD_BLOCK;
         }
 
-#ifdef _WIN32
-        if (err == WSAECONNRESET || err == WSAECONNABORTED)
+        if (sw__disconnected(err))
         {
             return SW_CLOSED;
         }
-#endif
 
         return SW_ERR;
     }

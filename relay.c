@@ -8,7 +8,7 @@
 
 #define MAX_CLIENTS (1024)
 #define PASSWORD "125b69e01a6ecb38220b2fd425201f08e6950f09e6daaaf914b26718b88d09ab"
-#define BUFFER_SIZE (64 * 1024 * 1024)
+#define OGG_BUFFER_SIZE (64 * 1024)
 #define OGG_HEADER_BUF_SIZE (64 * 1024)
 
 #define LISTENER_PORT (30000)
@@ -87,7 +87,7 @@ static size_t ogg_header_hexlen_size = 0;
 static size_t ogg_header_buf_pos = 0;
 static uint8_t ogg_header_buf[OGG_HEADER_BUF_SIZE];
 static size_t ogg_buf_head = 0;
-static uint8_t ogg_buf[BUFFER_SIZE];
+static uint8_t ogg_buf[OGG_BUFFER_SIZE];
 
 static llhttp_settings_t llhttp_settings;
 
@@ -268,7 +268,6 @@ int main(int argc, char** argv)
 				printf("streamer connected\n");
 				sw_socket_set_nonblocking(streamer.s, 1);
 				ogg_header_buf_pos = 0;
-				//http_chunk_head = 0;
 				streamer.state = STREAMER_HANDSHAKE;
 			}
 		}
@@ -321,8 +320,16 @@ int main(int argc, char** argv)
 				}
 				case STREAMER_STREAM:
 				{
+					if (ogg_buf_head == sizeof(ogg_buf))
+					{
+						//printf("OGG head reset\n");
+						ogg_buf_head = 0;
+					}
+
+					const size_t ogg_remaining = sizeof(ogg_buf) - ogg_buf_head;
+
 					size_t nread;
-					r = sw_recv(streamer.s, ogg_buf + ogg_buf_head, 64 * 1024, &nread);
+					r = sw_recv(streamer.s, ogg_buf + ogg_buf_head, ogg_remaining, &nread);
 					if (r == SW_WOULD_BLOCK) break;
 					if (r != SW_OK)
 					{
@@ -491,6 +498,7 @@ int main(int argc, char** argv)
 
 					const size_t http_remaining = chunk->size - client->http_chunk_cursor;
 
+					//printf("ogg buf tail = %zu\n", (uintptr_t)(chunk->data - ogg_buf));
 					//printf("http_remaining = %zu\n", http_remaining);
 
 					size_t nsent;
