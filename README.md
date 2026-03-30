@@ -22,6 +22,9 @@ Oggo is a tiny OGG stream multiplexer packaged in two parts:
                   |----------|    |----------|    |----------|
 ```
 
+Visit https://vennstrom.dev/stream to listen to an oggo stream right now!
+It is live audio from my modular synthesizer at home.
+
 ## Dependencies
 
 * libogg 1.3.6 (external/ogg)
